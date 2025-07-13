@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GIF Runner: Urban Chaos</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #000000;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas {
+            border: 3px solid white;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            background-color: #333;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Membuat canvas responsif
+        const aspectRatio = 16 / 9;
+        function resizeCanvas() {
+            const width = Math.min(window.innerWidth - 20, 1024);
+            const height = width / aspectRatio;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+
+        // --- Variabel Game ---
+        let score = 0;
+        let gameSpeed = 5;
+        let isGameOver = false;
+        let gameStarted = false;
+        let keys = {};
+
+        // --- Aset & Sumber Gambar ---
+        const background = new Image();
+        background.src = 'https://i.imgur.com/gJ8bGld.png'; 
+        let bgX = 0;
+
+        const skaterSprite = new Image();
+        skaterSprite.src = 'https://media.giphy.com/media/IwRbEyu78bzjghSSZF/giphy.gif';
+        
+        const jumpSprite = new Image();
+        jumpSprite.src = 'https://media.giphy.com/media/e2QjHD73Q7i6LexibW/giphy.gif';
+        
+        const loseSprite = new Image();
+        loseSprite.src = 'https://media.giphy.com/media/lXiRhayH2ifP1vj82/giphy.gif';
+
+        let obstacles = [];
+
+        // --- Kelas Pemain ---
+        class Player {
+            constructor() {
+                this.baseY = canvas.height * 0.75;
+                this.x = canvas.width * 0.1;
+                this.y = this.baseY;
+                this.width = canvas.width * 0.12;
+                this.height = canvas.width * 0.12;
+                this.velocityY = 0;
+                this.isJumping = false;
+                this.gravity = 0.7;
+            }
+
+            draw() {
+                let currentSprite = this.isJumping ? jumpSprite : skaterSprite;
+                if (isGameOver) {
+                    currentSprite = loseSprite;
+                }
+                ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height);
+            }
+
+            update() {
+                this.y += this.velocityY;
+                this.baseY = canvas.height - (canvas.height * 0.15) - this.height;
+
+                if (this.y + this.height < this.baseY + this.height) {
+                    this.velocityY += this.gravity;
+                    this.isJumping = true;
+                } else {
+                    this.velocityY = 0;
+                    this.isJumping = false;
+                    this.y = this.baseY;
+                }
+
+                if ((keys['Space'] || keys['ArrowUp'] || keys['touchstart']) && !this.isJumping) {
+                    this.jump();
+                }
+                
+                // Reset flag sentuh agar tidak lompat terus menerus
+                if (keys['touchstart']) keys['touchstart'] = false;
+
+                this.draw();
+            }
+
+            jump() {
+                this.velocityY = -(canvas.height * 0.04);
+                this.isJumping = true;
+            }
+             resize() {
+                this.x = canvas.width * 0.1;
+                this.width = canvas.width * 0.12;
+                this.height = canvas.width * 0.12;
+                this.baseY = canvas.height - (canvas.height * 0.15) - this.height;
+                this.y = this.baseY;
+            }
+        }
+        
+        const player = new Player();
+
+        // --- Kelas Rintangan ---
+        class Obstacle {
+            constructor() {
+                this.width = canvas.width * 0.05;
+                this.height = canvas.height * 0.15;
+                this.x = canvas.width;
+                this.y = canvas.height - this.height - (canvas.height * 0.15);
+            }
+
+            draw() {
+                ctx.fillStyle = '#cc2936'; // Warna rintangan (placeholder)
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+
+            update() {
+                this.x -= gameSpeed;
+                this.draw();
+            }
+        }
+
+        function handleObstacles() {
+            if (score > 150 && Math.random() < 0.015 && obstacles.length < 3) {
+                 obstacles.push(new Obstacle());
+            }
+
+            for (let i = 0; i < obstacles.length; i++) {
+                obstacles[i].update();
+
+                // Deteksi Tabrakan
+                if (player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width * 0.7 > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y) {
+                    isGameOver = true;
+                }
+
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.shift();
+                }
+            }
+        }
+
+        // --- Input Handler ---
+        window.addEventListener('keydown', (e) => { keys[e.code] = true; if (!gameStarted) startGame(); });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); keys['touchstart'] = true; if (!gameStarted) startGame(); }, { passive: false });
+        
+
+        // --- Fungsi Utama Game (Game Loop) ---
+        function animate() {
+            if (isGameOver) {
+                gameOverScreen();
+                return;
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            bgX -= gameSpeed / 2;
+            if (bgX < -canvas.width) bgX = 0;
+            ctx.drawImage(background, bgX, 0, canvas.width, canvas.height);
+            ctx.drawImage(background, bgX + canvas.width, 0, canvas.width, canvas.height);
+
+            player.update();
+            handleObstacles();
+            
+            score++;
+            ctx.fillStyle = 'white';
+            ctx.font = `${canvas.width * 0.03}px Arial`;
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 4;
+            ctx.strokeText('Skor: ' + Math.floor(score/5), 20, 40);
+            ctx.fillText('Skor: ' + Math.floor(score/5), 20, 40);
+
+            if (score % 200 === 0) {
+                gameSpeed += 0.2;
+            }
+
+            requestAnimationFrame(animate);
+        }
+        
+        function gameOverScreen() {
+            player.draw(); // Draw the losing sprite one last time
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+
+            ctx.font = `${canvas.width * 0.07}px Arial`;
+            ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 40);
+            
+            ctx.font = `${canvas.width * 0.03}px Arial`;
+            ctx.fillText('Skor Akhir: ' + Math.floor(score/5), canvas.width/2, canvas.height/2);
+
+            ctx.font = `${canvas.width * 0.025}px Arial`;
+            ctx.fillText('Tekan Enter atau Sentuh Layar untuk Mulai Lagi', canvas.width/2, canvas.height/2 + 50);
+
+            if (keys['Enter'] || keys['touchstart']) {
+                resetGame();
+            } else {
+                requestAnimationFrame(gameOverScreen);
+            }
+        }
+        
+        function resetGame() {
+            keys = {};
+            score = 0;
+            gameSpeed = 5;
+            obstacles = [];
+            player.y = player.baseY;
+            isGameOver = false;
+            gameStarted = true;
+            animate();
+        }
+
+        function showStartScreen() {
+             ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+             ctx.fillStyle = 'white';
+             ctx.textAlign = 'center';
+             ctx.font = `${canvas.width * 0.05}px Arial`;
+             ctx.fillText('GIF Runner: Urban Chaos', canvas.width/2, canvas.height/2 - 40);
+             ctx.font = `${canvas.width * 0.03}px Arial`;
+             ctx.fillText('Tekan Tombol Apapun atau Sentuh Layar', canvas.width/2, canvas.height/2);
+        }
+        
+        function startGame() {
+            if (gameStarted) return;
+            gameStarted = true;
+            animate();
+        }
+
+        background.onload = () => {
+             player.resize(); // Sesuaikan ukuran pemain setelah canvas siap
+             showStartScreen();
+        };
+        background.onerror = () => {
+            console.error("Gagal memuat gambar latar belakang. Memulai dengan background hitam.");
+            player.resize();
+            showStartScreen();
+        };
+    });
+    </script>
+</body>
+</html>
